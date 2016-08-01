@@ -9,4 +9,6 @@
   <logo>http://</logo>
   <depend package="base/cmake" />
   <depend package="control/uwv_dynamic_model"/>
+  <depend package="drivers/orogen/transformer"/>
+  <depend package="drivers/orogen/aggregator" />
 </package>

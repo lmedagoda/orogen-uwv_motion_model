@@ -17,8 +17,17 @@ task_context "Task" do
     .doc("Parameters of the motion model.")
   
   property("control_mode", "uwv_motion_model/ControlMode")
-    .doc("Defines if the control signal is PWM, RPM or EFFORT.")
+    .doc("Defines if the thrusters control signal is PWM, RPM or EFFORT.")
     
+  property("a_thruster_ids", "uwv_motion_model/ActuatorIDs")
+    .doc("Set the names of the thrusters and give them ids. If your vehicle doesn't have thrusters then leave empty.")
+
+  property("a_cells_ids", "uwv_motion_model/ActuatorIDs")
+    .doc("Set the names of the dive cells and give them ids. If your vehicle doesn't have diving cells then leave empty.")
+
+  property("a_vectoring_ids", "uwv_motion_model/ActuatorIDs")
+    .doc("Set the names of the vectoring servos and give them ids. If your vehicle doesn't have vectoring servos then leave empty.")
+            
   property("source_frame", "std/string")
     .doc("Name of the source frame.")
     

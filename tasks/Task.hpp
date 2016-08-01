@@ -31,8 +31,16 @@ namespace uwv_motion_model {
 
 	boost::shared_ptr<underwaterVehicle::DynamicModel> gMotionModel;
 	underwaterVehicle::Parameters    gModelParameters;
-	bool checkInput(base::samples::Joints &controlInput);
+	bool checkInput(base::samples::Joints &controlInput, base::samples::Joints &thrusterInput, base::samples::Joints &cellsInput, base::samples::Joints &vectoringInput);
 	base::Time gLastControlInput;
+	ActuatorIDs thruster_ids;
+	ActuatorIDs cells_ids;
+	ActuatorIDs vectoring_ids;
+	
+	/**
+	 * This function takes the controlInput and splits it into thrusterInput, cellsInput, and vectoringInput
+	 */
+	bool SplitJoints(base::samples::Joints &controlInput, base::samples::Joints &thrusterInput, base::samples::Joints &cellsInput, base::samples::Joints &vectoringInput);
 
 	/**
 	 * Transforms a set of coordinates from euler to axis-angle representation

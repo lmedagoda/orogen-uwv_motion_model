@@ -8,6 +8,7 @@
  * which case you do not need this file
  */
 #include <base/samples/RigidBodyAcceleration.hpp>
+#include <base/NamedVector.hpp>
 
 namespace uwv_motion_model
 {
@@ -26,6 +27,9 @@ namespace uwv_motion_model
 
 	enum ControlMode
 	{ PWM, RPM, EFFORT };
+	
+	struct ActuatorIDs : public base::NamedVector<int> {
+	};
 }
 
 #endif

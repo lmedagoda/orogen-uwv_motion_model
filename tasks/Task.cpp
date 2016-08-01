@@ -1,6 +1,7 @@
 /* Generated from orogen/lib/orogen/templates/tasks/Task.cpp */
 
 #include "Task.hpp"
+#include <base/JointState.hpp>
 
 using namespace uwv_motion_model;
 
@@ -29,18 +30,24 @@ bool Task::configureHook()
 
     gModelParameters = _model_parameters.get();
 
-    int controlOrder 	= gModelParameters.ctrl_order;
-    int simPerCycle 	= gModelParameters.sim_per_cycle;
-    double samplingTime = TaskContext::getPeriod();
+    int controlOrder 	  = gModelParameters.ctrl_order;
+    int numberOfThrusters = gModelParameters.number_of_Thrusters;
+    int numberOfCells     = gModelParameters.number_of_cells;
+    int numberOfVectoring = gModelParameters.number_of_vectoring;
+    int simPerCycle 	  = gModelParameters.sim_per_cycle;
+    double samplingTime   = TaskContext::getPeriod();
 
     // Creating the motion model object
-    gMotionModel.reset(new underwaterVehicle::DynamicModel(controlOrder, samplingTime, simPerCycle));
+    gMotionModel.reset(new underwaterVehicle::DynamicModel(controlOrder, numberOfThrusters, numberOfCells, numberOfVectoring, samplingTime, simPerCycle));
     gMotionModel->initParameters(gModelParameters);
 
     // Updating the samplingTime at the component property
     gModelParameters.samplingtime = samplingTime;
     _model_parameters.set(gModelParameters);
     gLastControlInput = base::Time::fromSeconds(0);
+    thruster_ids = _a_thruster_ids.value();
+    cells_ids = _a_cells_ids.value();
+    vectoring_ids = _a_vectoring_ids.value();;
 
     return true;
 }
@@ -59,12 +66,36 @@ void Task::updateHook()
     SecondaryStates secondaryStates;
     ControlMode controlMode = _control_mode.get();
     static bool firstRun = true;
+    
+    base::commands::Joints thrustersInput;
+    base::commands::Joints cellsInput;
+    base::commands::Joints vectoringInput;
+    
+    if(thruster_ids.size()!=0)
+    {
+     thrustersInput.elements.resize(thruster_ids.size());
+     thrustersInput.names = thruster_ids.names;
+    }
+    
+     if(cells_ids.size()!=0)
+    {
+     cellsInput.elements.resize(cells_ids.size());
+     cellsInput.names = cells_ids.names;
+    }
+    
+    if(vectoring_ids.size()!=0)
+    {
+     vectoringInput.elements.resize(vectoring_ids.size());
+     vectoringInput.names = vectoring_ids.names;
+    }
 
     // Updating control input
     if (_cmd_in.readNewest(controlInput) == RTT::NewData)
     {
+     SplitJoints(controlInput, thrustersInput, cellsInput, vectoringInput);
+
     	// Checking if the control input was properly set
-    	if(checkInput(controlInput))
+    	if(checkInput(controlInput, thrustersInput, cellsInput, vectoringInput))
     	{
     		if(state() != SIMULATING)
     			state(SIMULATING);
@@ -73,13 +104,18 @@ void Task::updateHook()
     		switch(controlMode)
     		{
     		case PWM:
-    			gMotionModel->sendPWMCommands(controlInput);
+    			gMotionModel->sendPWMCommands(thrustersInput);
+    			gMotionModel->sendCellsCommands(cellsInput);
+    			gMotionModel->sendUpdateStates();
     			break;
     		case RPM:
-    			gMotionModel->sendRPMCommands(controlInput);
+    			gMotionModel->sendRPMCommands(thrustersInput);
+    			gMotionModel->sendCellsCommands(cellsInput);
+    			gMotionModel->sendUpdateStates();
     			break;
     		case EFFORT:
     			gMotionModel->sendEffortCommands(controlInput);
+    			gMotionModel->sendUpdateStates();
     			break;
     		}
 
@@ -110,10 +146,10 @@ void Task::updateHook()
     		eulerToAxisAngle(states.angular_velocity);
 
     		// Setting the sample time
-    		states.time 							 = controlInput.time;
+    		states.time 				 = controlInput.time;
     		secondaryStates.angularAcceleration.time = controlInput.time;
     		secondaryStates.linearAcceleration.time  = controlInput.time;
-    		secondaryStates.efforts.time 			 = controlInput.time;
+    		secondaryStates.efforts.time 	         = controlInput.time;
 
     		// Setting source and target frame names
     		states.sourceFrame 			= _source_frame.get();
@@ -125,6 +161,7 @@ void Task::updateHook()
     		// Writing the updated states
     		_cmd_out.write(states);
     		_secondary_states.write(secondaryStates);
+    		
     	}
     }
     else if(firstRun)
@@ -134,10 +171,98 @@ void Task::updateHook()
     	_cmd_out.write(states);
     }
 }
-bool Task::checkInput(base::samples::Joints &controlInput)
+bool Task::SplitJoints(base::samples::Joints &controlInput, base::samples::Joints &thrustersInput, base::samples::Joints &cellsInput, base::samples::Joints &vectoringInput)
+{
+  if(thruster_ids.size()!=0)
+     {
+    	//Look for the matching thrusters names and copy the joints to thrustersInput
+       for( int i = 0; i < controlInput.elements.size() && i < controlInput.names.size(); i++)
+        {
+	 if( (!base::isNaN(controlInput.elements[i].speed)) || (!base::isNaN(controlInput.elements[i].position)) )
+	 {
+	  for (size_t ii = 0; ii < thruster_ids.size(); ii++)
+	   {
+	    if(thrustersInput.names[ii] == controlInput.names[i])
+	    {
+	     thrustersInput.elements[ii] = controlInput.elements[i];
+             thrustersInput.elements[ii].raw = base::unset<double>();
+	    }
+	   }
+	   thrustersInput.time = controlInput.time;
+	  }	
+        }
+      }
+      
+  if(cells_ids.size()!=0)
+  {
+  //Look for the matching diving cells names and copy the joints to cellsInput
+  for( int i = 0; i < controlInput.elements.size() && i < controlInput.names.size(); i++)
+   {
+    if( (!base::isNaN(controlInput.elements[i].speed)) || (!base::isNaN(controlInput.elements[i].position)) )
+    {
+     for (size_t ii = 0; ii < cells_ids.size(); ii++)
+     {
+      if(cellsInput.names[ii] == controlInput.names[i])
+      {
+       cellsInput.elements[ii] = controlInput.elements[i];
+       cellsInput.elements[ii].raw = base::unset<double>();
+      }
+     }
+      cellsInput.time = controlInput.time;
+    }
+   }
+  }
+  
+  if(vectoring_ids.size()!=0)
+  {
+    //Look for the matching vectoring servos names and copy the joints to vectoringInput
+    for( int i = 0; i < controlInput.elements.size() && i < controlInput.names.size(); i++)
+    {
+      if( (!base::isNaN(controlInput.elements[i].speed)) || (!base::isNaN(controlInput.elements[i].position)) )
+      {
+	for (size_t ii = 0; ii < cells_ids.size(); ii++)
+	{
+	  if(vectoringInput.names[ii] == controlInput.names[i])
+	  {
+	    vectoringInput.elements[ii] = controlInput.elements[i];
+	    vectoringInput.elements[ii].raw = base::unset<double>();    
+	  }  
+	}
+	vectoringInput.time = controlInput.time;
+	
+      }
+    }
+  }
+}
+
+bool Task::checkInput(base::samples::Joints &controlInput, base::samples::Joints &thrusterInput, base::samples::Joints &cellsInput, base::samples::Joints &vectoringInput)
 {
 	ControlMode controlMode = _control_mode.get();
 	bool inputError = false;
+	
+	if(thrusterInput.size() != gModelParameters.number_of_Thrusters)
+	{
+	  std::cout << "\n\n\x1b[31m (Task: uwv_motion_model.cpp)"
+				" Number of thrusters doesn't match the size of thrusters names array.\x1b[0m\n\n";
+	  inputError = true;
+	  exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
+	}
+	
+	if(cellsInput.size() != gModelParameters.number_of_cells)
+	{
+	  std::cout << "\n\n\x1b[31m (Task: uwv_motion_model.cpp)"
+				" Number of diving cells doesn't match the size of diving cells names array.\x1b[0m\n\n";
+	  inputError = true;
+	  exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
+	}
+	
+	if(vectoringInput.size() != gModelParameters.number_of_vectoring)
+	{
+	  std::cout << "\n\n\x1b[31m (Task: uwv_motion_model.cpp)"
+				" Number of vectoring joints doesn't match the size of vectoring joints names array.\x1b[0m\n\n";
+	  inputError = true;
+	  exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
+	}
 
 	// Checks if the controlInput size is correct and then if
 	// the correspondent field is set
@@ -146,14 +271,16 @@ bool Task::checkInput(base::samples::Joints &controlInput)
 	case PWM:
 		if(controlInput.size() != gModelParameters.ctrl_order)
 		{
-			inputError = true;
-			exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
+		  std::cout << "\n\n\x1b[31m (Task: uwv_motion_model.cpp)"
+				" Size of control inputs doesn't match the model's control order.\x1b[0m\n\n";
+		  inputError = true;
+		  exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
 		}
 		else
 		{
 			for (uint i = 0; i < controlInput.size(); i++)
 			{
-				if (!controlInput.elements[i].hasRaw())
+				if (!thrusterInput.elements[i].hasRaw())
 				{
 					inputError = true;
 					if(state() != RAW_FIELD_UNSET)
@@ -166,14 +293,16 @@ bool Task::checkInput(base::samples::Joints &controlInput)
 	case RPM:
 		if(controlInput.size() != gModelParameters.ctrl_order)
 		{
-			inputError = true;
-			exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
+		  std::cout << "\n\n\x1b[31m (Task: uwv_motion_model.cpp)"
+				" Size of control inputs doesn't match the model's control order.\x1b[0m\n\n";
+		  inputError = true;
+		  exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
 		}
 		else
 		{
-			for (uint i = 0; i < controlInput.size(); i++)
+			for (uint i = 0; i < gModelParameters.number_of_Thrusters; i++)
 			{
-				if (!controlInput.elements[i].hasSpeed())
+				if (!thrusterInput.elements[i].hasSpeed())
 				{
 					inputError = true;
 					if(state() != SPEED_FIELD_UNSET)
@@ -186,6 +315,8 @@ bool Task::checkInput(base::samples::Joints &controlInput)
 	case EFFORT:
 		if(controlInput.size() != 6)
 		{
+		  std::cout << "\n\n\x1b[31m (Task: uwv_motion_model.cpp)"
+				" Size of control inputs should be 6 when using effort inputs.\x1b[0m\n\n";
 			inputError = true;
 			exception(WRONG_SIZE_OF_CONTROL_ELEMENTS);
 		}
@@ -260,11 +391,34 @@ void Task::errorHook()
     TaskBase::errorHook();
 
     base::commands::Joints newControlInput;
+    
+    base::commands::Joints thrustersInput;
+    base::commands::Joints cellsInput;
+    base::commands::Joints vectoringInput;
+    
+    if(thruster_ids.size()!=0)
+    {
+     thrustersInput.elements.resize(thruster_ids.size());
+     thrustersInput.names = thruster_ids.names;
+    }
+    
+     if(cells_ids.size()!=0)
+    {
+     cellsInput.elements.resize(cells_ids.size());
+     cellsInput.names = cells_ids.names;
+    }
+    
+    if(vectoring_ids.size()!=0)
+    {
+     vectoringInput.elements.resize(vectoring_ids.size());
+     vectoringInput.names = vectoring_ids.names;
+    }
 
     if (_cmd_in.readNewest(newControlInput) == RTT::NewData)
     {
+     SplitJoints(newControlInput, thrustersInput, cellsInput, vectoringInput);
     	// If there's no input error anymore, the system is recovered to operational state
-    	if(checkInput(newControlInput))
+    	if(checkInput(newControlInput, thrustersInput, cellsInput, vectoringInput))
     		recover();
     }
 }
