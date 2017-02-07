@@ -48,6 +48,9 @@ task_context "Task" do
   output_port("cmd_out", "/base/samples/RigidBodyState")
     .doc("The new states after the thrusters' commands are applied.")
     
+  output_port("dvl_output", "/base/samples/RigidBodyState")
+    .doc("DVL simulated output")
+    
   output_port("secondary_states", "uwv_motion_model/SecondaryStates")
     .doc("Effort and acceleration values.")
 

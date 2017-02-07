@@ -47,8 +47,8 @@ bool Task::configureHook()
     gLastControlInput = base::Time::fromSeconds(0);
     thruster_ids = _a_thruster_ids.value();
     cells_ids = _a_cells_ids.value();
-    vectoring_ids = _a_vectoring_ids.value();;
-
+    vectoring_ids = _a_vectoring_ids.value();
+    
     return true;
 }
 bool Task::startHook()
@@ -63,10 +63,15 @@ void Task::updateHook()
 
     base::commands::Joints controlInput;
     base::samples::RigidBodyState states;
+    base::samples::RigidBodyState dvl_output;
+    dvl_output.invalidate();
     SecondaryStates secondaryStates;
     ControlMode controlMode = _control_mode.get();
     static bool firstRun = true;
-    
+    static base::Time dvl_time;
+    static bool first_dvl = true;
+    static bool first_rng = true;
+   
     base::commands::Joints thrustersInput;
     base::commands::Joints cellsInput;
     base::commands::Joints vectoringInput;
@@ -146,7 +151,7 @@ void Task::updateHook()
     		eulerToAxisAngle(states.angular_velocity);
 
     		// Setting the sample time
-    		states.time 				 = controlInput.time;
+    		states.time 				 = controlInput.time.now();
     		secondaryStates.angularAcceleration.time = controlInput.time;
     		secondaryStates.linearAcceleration.time  = controlInput.time;
     		secondaryStates.efforts.time 	         = controlInput.time;
@@ -161,14 +166,34 @@ void Task::updateHook()
     		// Writing the updated states
     		_cmd_out.write(states);
     		_secondary_states.write(secondaryStates);
-    		
+	
+ 		//Create simulated DVL dvl_output
+		if(first_dvl)
+		{
+          //std::default_random_engine generator(states.time);
+		  first_dvl = false;
+		  dvl_time = controlInput.time.now();
+          
+        }
+		else if(controlInput.time.now().toSeconds() - dvl_time.toSeconds() > 0.3) // 3 Hz DVL
+		{
+		  dvl_output.time = states.time;
+		  dvl_output.velocity = states.velocity;
+//           dvl_output.velocity.x() = states.velocity.x() + dvl_noise();
+//           dvl_output.velocity.y() = states.velocity.y() + dvl_noise();
+//           dvl_output.velocity.z() = states.velocity.z() + dvl_noise();
+          dvl_output.cov_velocity = 0.0001 * Eigen::Matrix3d::Identity();
+		  _dvl_output.write(dvl_output);
+		  dvl_time = controlInput.time.now();
+		}
+		
     	}
     }
     else if(firstRun)
     {
     	firstRun = false;
     	states.initUnknown();
-    	_cmd_out.write(states);
+    	_cmd_out.write(states);      
     }
 }
 bool Task::SplitJoints(base::samples::Joints &controlInput, base::samples::Joints &thrustersInput, base::samples::Joints &cellsInput, base::samples::Joints &vectoringInput)

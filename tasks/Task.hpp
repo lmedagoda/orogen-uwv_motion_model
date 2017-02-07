@@ -7,6 +7,8 @@
 #include "uwv_dynamic_model/uwv_dynamic_model.hpp"
 #include "uwv_dynamic_model/uwv_dataTypes.hpp"
 #include "base/commands/Joints.hpp"
+#include "Eigen/Core"
+#include <boost/random.hpp>
 
 namespace uwv_motion_model {
 
